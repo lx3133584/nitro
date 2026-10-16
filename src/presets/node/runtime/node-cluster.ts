@@ -5,6 +5,17 @@ import {
   trapUnhandledNodeErrors,
 } from "nitropack/runtime/internal";
 
+export function forwardSignalToWorkers(
+  workers: NodeJS.Dict<cluster.Worker> | undefined,
+  signal?: NodeJS.Signals
+) {
+  for (const worker of Object.values(workers || {})) {
+    if (worker && !worker.isDead() && worker.process) {
+      worker.process.kill(signal);
+    }
+  }
+}
+
 function runMaster() {
   const numberOfWorkers =
     Number.parseInt(process.env.NITRO_CLUSTER_WORKERS || "") ||
@@ -25,11 +36,14 @@ function runMaster() {
   // Graceful shutdown
   const shutdownConfig = getGracefulShutdownConfig();
   if (!shutdownConfig.disabled) {
-    async function onShutdown() {
+    async function onShutdown(signal?: NodeJS.Signals) {
       if (isShuttingDown) {
         return;
       }
       isShuttingDown = true;
+
+      forwardSignalToWorkers(cluster.workers, signal);
+
       await new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
           console.warn("Timeout reached for graceful shutdown. Forcing exit.");
@@ -54,7 +68,7 @@ function runMaster() {
       }
     }
     for (const signal of shutdownConfig.signals) {
-      process.once(signal, onShutdown);
+      process.once(signal, () => onShutdown(signal as NodeJS.Signals));
     }
   }
 }
