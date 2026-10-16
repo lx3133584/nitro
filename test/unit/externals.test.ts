@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyProductionCondition,
   externals,
+  findPackageParents,
   normalizeMatcher,
 } from "../../src/rollup/plugins/externals";
 
@@ -141,4 +142,68 @@ describe("externals:applyProductionCondition", () => {
       expect(t.in).toEqual(t.out);
     });
   }
+});
+
+describe("externals:findPackageParents", () => {
+  it("ignores missing parent files in tracedFiles and retains known parents", () => {
+    const pkg: any = {
+      name: "dependency",
+      versions: {
+        "1.0.0": {
+          files: ["child"],
+        },
+      },
+    };
+    const tracedFiles: any = {
+      child: {
+        parents: ["missing", "known"],
+      },
+      known: {
+        pkgName: "parent",
+        pkgVersion: "2.0.0",
+      },
+    };
+    const parents = findPackageParents(pkg, "1.0.0", tracedFiles);
+    expect(parents).toEqual(["parent@2.0.0"]);
+  });
+
+  it("handles empty or missing parents and files gracefully", () => {
+    const pkg: any = {
+      name: "dependency",
+      versions: {
+        "1.0.0": {
+          files: ["missing-file", "empty-parents"],
+        },
+      },
+    };
+    const tracedFiles: any = {
+      "empty-parents": {
+        parents: [],
+      },
+    };
+    const parents = findPackageParents(pkg, "1.0.0", tracedFiles);
+    expect(parents).toEqual([]);
+  });
+
+  it("ignores self-referencing package files", () => {
+    const pkg: any = {
+      name: "dependency",
+      versions: {
+        "1.0.0": {
+          files: ["file1"],
+        },
+      },
+    };
+    const tracedFiles: any = {
+      file1: {
+        parents: ["file2"],
+      },
+      file2: {
+        pkgName: "dependency",
+        pkgVersion: "1.0.0",
+      },
+    };
+    const parents = findPackageParents(pkg, "1.0.0", tracedFiles);
+    expect(parents).toEqual([]);
+  });
 });
